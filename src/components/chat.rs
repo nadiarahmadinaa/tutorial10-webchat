@@ -9,7 +9,10 @@ use crate::{services::websocket::WebsocketService, User};
 pub enum Msg {
     HandleMsg(String),
     SubmitMessage,
+    ToggleEmojiPicker,
+    AddEmoji(String),
 }
+
 
 #[derive(Deserialize)]
 struct MessageData {
@@ -45,6 +48,7 @@ pub struct Chat {
     _producer: Box<dyn Bridge<EventBus>>,
     wss: WebsocketService,
     messages: Vec<MessageData>,
+    show_emoji_picker: bool,
 }
 impl Component for Chat {
     type Message = Msg;
@@ -78,11 +82,23 @@ impl Component for Chat {
             chat_input: NodeRef::default(),
             wss,
             _producer: EventBus::bridge(ctx.link().callback(Msg::HandleMsg)),
+            show_emoji_picker: false,
         }
     }
 
     fn update(&mut self, _ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
+            Msg::ToggleEmojiPicker => {
+                self.show_emoji_picker = !self.show_emoji_picker;
+                true
+            }
+            Msg::AddEmoji(emoji) => {
+                if let Some(input) = self.chat_input.cast::<HtmlInputElement>() {
+                    let current = input.value();
+                    input.set_value(&(current + &emoji));
+                }
+                false
+            }
             Msg::HandleMsg(s) => {
                 let msg: WebSocketMessage = serde_json::from_str(&s).unwrap();
                 match msg.message_type {
@@ -137,6 +153,26 @@ impl Component for Chat {
 
     fn view(&self, ctx: &Context<Self>) -> Html {
         let submit = ctx.link().callback(|_| Msg::SubmitMessage);
+        let toggle_emoji_picker = ctx.link().callback(|_| Msg::ToggleEmojiPicker);
+
+        let emojis = vec!["😀", "😂", "😍", "😎", "👍", "🎉"];
+        let emoji_picker = if self.show_emoji_picker {
+            html! {
+                <div class="absolute bottom-16 left-4 bg-white border rounded shadow p-2 flex space-x-2 z-50">
+                    {
+                        emojis.into_iter().map(|e| {
+                            let emoji = e.to_string();
+                            let onclick = ctx.link().callback(move |_| Msg::AddEmoji(emoji.clone()));
+                            html! {
+                                <button onclick={onclick} class="text-xl">{ e }</button>
+                            }
+                        }).collect::<Html>()
+                    }
+                </div>
+            }
+        } else {
+            html! {}
+        };
 
         html! {
             <div class="flex w-screen">
@@ -189,7 +225,9 @@ impl Component for Chat {
                         }
 
                     </div>
-                    <div class="w-full h-14 flex px-3 items-center">
+                    <div class="w-full h-14 flex px-3 items-center relative">
+                        { emoji_picker }
+                        <button onclick={toggle_emoji_picker} class="p-2 text-xl">{"😊"}</button>
                         <input ref={self.chat_input.clone()} type="text" placeholder="Message" class="block w-full py-2 pl-4 mx-3 bg-gray-100 rounded-full outline-none focus:text-gray-700" name="message" required=true />
                         <button onclick={submit} class="p-3 shadow-sm bg-blue-600 w-10 h-10 rounded-full flex justify-center items-center color-white">
                             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="fill-white">
